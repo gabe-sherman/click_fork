@@ -364,10 +364,32 @@ class Choice(ParamType, t.Generic[ParamTypeValue]):
 
         .. versionadded:: 8.2
         """
-        choices_str = ", ".join(map(repr, self._normalized_mapping(ctx=ctx).values()))
+        choices = list(self._normalized_mapping(ctx=ctx).values())
+        choices_str = ", ".join(map(repr, choices))
+        
+        # Try to find the closest match for better user experience
+        if isinstance(value, str):
+            import difflib
+            close_matches = difflib.get_close_matches(
+                value, [str(choice) for choice in choices], n=3, cutoff=0.6
+            )
+            if close_matches:
+                suggestions = ", ".join(map(repr, close_matches))
+                return ngettext(
+                    "{value!r} is not {choice}. Did you mean {suggestion}?",
+                    "{value!r} is not one of {choices}. Did you mean one of {suggestions}?",
+                    len(close_matches),
+                ).format(
+                    value=value, 
+                    choice=choices_str, 
+                    choices=choices_str,
+                    suggestion=suggestions,
+                    suggestions=suggestions
+                )
+        
         return ngettext(
-            "{value!r} is not {choice}.",
-            "{value!r} is not one of {choices}.",
+            "{value!r} is not {choice}. Choose from: {choices}",
+            "{value!r} is not one of {choices}. Choose from: {choices}",
             len(self.choices),
         ).format(value=value, choice=choices_str, choices=choices_str)
 
@@ -455,15 +477,28 @@ class DateTime(ParamType):
                 return converted
 
         formats_str = ", ".join(map(repr, self.formats))
-        self.fail(
-            ngettext(
-                "{value!r} does not match the format {format}.",
-                "{value!r} does not match the formats {formats}.",
-                len(self.formats),
-            ).format(value=value, format=formats_str, formats=formats_str),
-            param,
-            ctx,
-        )
+        
+        # Provide more helpful error messages with examples
+        if len(self.formats) == 1:
+            error_msg = _("{value!r} does not match the expected format {format}. Example: {example}").format(
+                value=value, 
+                format=formats_str,
+                example=datetime.now().strftime(self.formats[0])
+            )
+        else:
+            # Show examples for the first few formats
+            examples = []
+            for fmt in self.formats[:3]:  # Show max 3 examples
+                examples.append(datetime.now().strftime(fmt))
+            examples_str = ", ".join(examples)
+            
+            error_msg = _("{value!r} does not match any of the expected formats {formats}. Examples: {examples}").format(
+                value=value,
+                formats=formats_str,
+                examples=examples_str
+            )
+        
+        self.fail(error_msg, param, ctx)
 
     def __repr__(self) -> str:
         return "DateTime"
@@ -478,13 +513,49 @@ class _NumberParamTypeBase(ParamType):
         try:
             return self._number_class(value)
         except ValueError:
-            self.fail(
-                _("{value!r} is not a valid {number_type}.").format(
-                    value=value, number_type=self.name
-                ),
-                param,
-                ctx,
-            )
+            # Provide more helpful error messages based on the input
+            if isinstance(value, str):
+                value_str = value.strip()
+                if not value_str:
+                    self.fail(
+                        _("Empty value provided. Please enter a valid {number_type}.").format(
+                            number_type=self.name
+                        ),
+                        param,
+                        ctx,
+                    )
+                elif value_str.startswith(('0x', '0X')):
+                    self.fail(
+                        _("{value!r} appears to be hexadecimal. Please provide a decimal {number_type}.").format(
+                            value=value, number_type=self.name
+                        ),
+                        param,
+                        ctx,
+                    )
+                elif any(c in value_str for c in '.,'):
+                    self.fail(
+                        _("{value!r} contains decimal separators. For {number_type}, please provide a whole number.").format(
+                            value=value, number_type=self.name
+                        ),
+                        param,
+                        ctx,
+                    )
+                else:
+                    self.fail(
+                        _("{value!r} is not a valid {number_type}. Please enter a numeric value.").format(
+                            value=value, number_type=self.name
+                        ),
+                        param,
+                        ctx,
+                    )
+            else:
+                self.fail(
+                    _("{value!r} is not a valid {number_type}. Expected a numeric value.").format(
+                        value=value, number_type=self.name
+                    ),
+                    param,
+                    ctx,
+                )
 
 
 class _NumberRangeBase(_NumberParamTypeBase):
@@ -534,13 +605,26 @@ class _NumberRangeBase(_NumberParamTypeBase):
                 return self._clamp(self.max, -1, self.max_open)  # type: ignore
 
         if lt_min or gt_max:
-            self.fail(
-                _("{value} is not in the range {range}.").format(
-                    value=rv, range=self._describe_range()
-                ),
-                param,
-                ctx,
-            )
+            # Provide more helpful error messages for range violations
+            if lt_min and gt_max:
+                error_msg = _("{value} is not in the range {range}. Please provide a value between {min_val} and {max_val}.").format(
+                    value=rv, 
+                    range=self._describe_range(),
+                    min_val=self.min if self.min is not None else "negative infinity",
+                    max_val=self.max if self.max is not None else "positive infinity"
+                )
+            elif lt_min:
+                error_msg = _("{value} is too small. Please provide a value {min_desc}.").format(
+                    value=rv,
+                    min_desc=f"greater than {self.min}" if self.min_open else f"greater than or equal to {self.min}"
+                )
+            else:  # gt_max
+                error_msg = _("{value} is too large. Please provide a value {max_desc}.").format(
+                    value=rv,
+                    max_desc=f"less than {self.max}" if self.max_open else f"less than or equal to {self.max}"
+                )
+            
+            self.fail(error_msg, param, ctx)
 
         return rv
 
@@ -743,8 +827,14 @@ class UUIDParameterType(ParamType):
         try:
             return uuid.UUID(value)
         except ValueError:
+            # Provide more helpful error message with example
+            example_uuid = str(uuid.uuid4())
             self.fail(
-                _("{value!r} is not a valid UUID.").format(value=value), param, ctx
+                _("{value!r} is not a valid UUID. Expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx. Example: {example}").format(
+                    value=value, example=example_uuid
+                ), 
+                param, 
+                ctx
             )
 
     def __repr__(self) -> str:

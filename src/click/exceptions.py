@@ -85,8 +85,18 @@ class UsageError(ClickException):
         if self.ctx is not None:
             color = self.ctx.color
             echo(f"{self.ctx.get_usage()}\n{hint}", file=file, color=color)
+        
+        # Add more helpful error message with suggestions
+        error_msg = self.format_message()
+        if isinstance(self, NoSuchOption) and hasattr(self, 'possibilities') and self.possibilities:
+            # For NoSuchOption, we already have suggestions in format_message
+            pass
+        elif isinstance(self, MissingParameter):
+            # For missing parameters, add a general tip
+            error_msg += "\n" + _("Tip: Use --help to see all available options and arguments.")
+        
         echo(
-            _("Error: {message}").format(message=self.format_message()),
+            _("Error: {message}").format(message=error_msg),
             file=file,
             color=color,
         )
@@ -129,8 +139,24 @@ class BadParameter(UsageError):
         else:
             return _("Invalid value: {message}").format(message=self.message)
 
-        return _("Invalid value for {param_hint}: {message}").format(
-            param_hint=_join_param_hints(param_hint), message=self.message
+        param_hint_str = _join_param_hints(param_hint)
+        
+        # Add more context about the parameter if available
+        context_hint = ""
+        if self.param is not None:
+            if hasattr(self.param, 'help') and self.param.help:
+                # Truncate help text if it's too long
+                help_text = self.param.help
+                if len(help_text) > 100:
+                    help_text = help_text[:97] + "..."
+                context_hint = f" ({help_text})"
+            elif hasattr(self.param, 'type') and hasattr(self.param.type, 'name'):
+                context_hint = f" (expected {self.param.type.name})"
+
+        return _("Invalid value for {param_hint}: {message}{context}").format(
+            param_hint=param_hint_str, 
+            message=self.message,
+            context=context_hint
         )
 
 
@@ -185,17 +211,25 @@ class MissingParameter(BadParameter):
 
         msg = f" {msg}" if msg else ""
 
-        # Translate param_type for known types.
+        # Translate param_type for known types with more helpful messages.
         if param_type == "argument":
-            missing = _("Missing argument")
+            missing = _("Missing required argument")
         elif param_type == "option":
-            missing = _("Missing option")
+            missing = _("Missing required option")
         elif param_type == "parameter":
-            missing = _("Missing parameter")
+            missing = _("Missing required parameter")
         else:
-            missing = _("Missing {param_type}").format(param_type=param_type)
+            missing = _("Missing required {param_type}").format(param_type=param_type)
 
-        return f"{missing}{param_hint}.{msg}"
+        # Add helpful context about how to provide the missing parameter
+        help_hint = ""
+        if self.param is not None:
+            if param_type == "option" and hasattr(self.param, 'opts') and self.param.opts:
+                help_hint = f" Use {self.param.opts[0]} to specify this option."
+            elif param_type == "argument":
+                help_hint = " Provide this argument after the command name."
+
+        return f"{missing}{param_hint}.{msg}{help_hint}"
 
     def __str__(self) -> str:
         if not self.message:
@@ -230,12 +264,30 @@ class NoSuchOption(UsageError):
         if not self.possibilities:
             return self.message
 
-        possibility_str = ", ".join(sorted(self.possibilities))
-        suggest = ngettext(
-            "Did you mean {possibility}?",
-            "(Possible options: {possibilities})",
-            len(self.possibilities),
-        ).format(possibility=possibility_str, possibilities=possibility_str)
+        # Try to find close matches for better suggestions
+        import difflib
+        close_matches = difflib.get_close_matches(
+            self.option_name, self.possibilities, n=3, cutoff=0.6
+        )
+        
+        if close_matches:
+            if len(close_matches) == 1:
+                suggest = _("Did you mean {possibility}?").format(possibility=close_matches[0])
+            else:
+                suggestions = ", ".join(close_matches)
+                suggest = _("Did you mean one of: {possibilities}?").format(possibilities=suggestions)
+        else:
+            # Fall back to showing all possibilities if no close matches
+            possibility_str = ", ".join(sorted(self.possibilities))
+            if len(self.possibilities) <= 5:
+                suggest = _("Available options: {possibilities}").format(possibilities=possibility_str)
+            else:
+                # Show only first few options if there are many
+                first_few = ", ".join(sorted(self.possibilities)[:3])
+                suggest = _("Available options include: {possibilities} (and {count} more)").format(
+                    possibilities=first_few, count=len(self.possibilities) - 3
+                )
+        
         return f"{self.message} {suggest}"
 
 
@@ -286,9 +338,23 @@ class FileError(ClickException):
         self.filename = filename
 
     def format_message(self) -> str:
-        return _("Could not open file {filename!r}: {message}").format(
-            filename=self.ui_filename, message=self.message
-        )
+        # Provide more helpful error messages based on the error type
+        if "No such file or directory" in self.message:
+            return _("File not found: {filename!r}. Please check the file path and try again.").format(
+                filename=self.ui_filename
+            )
+        elif "Permission denied" in self.message:
+            return _("Permission denied: {filename!r}. You may not have permission to access this file.").format(
+                filename=self.ui_filename
+            )
+        elif "Is a directory" in self.message:
+            return _("Expected a file but found a directory: {filename!r}.").format(
+                filename=self.ui_filename
+            )
+        else:
+            return _("Could not open file {filename!r}: {message}").format(
+                filename=self.ui_filename, message=self.message
+            )
 
 
 class Abort(RuntimeError):

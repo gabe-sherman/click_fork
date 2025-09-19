@@ -60,13 +60,12 @@ def make_pass_decorator(
 
         from functools import update_wrapper
 
-        def decorator(f):
-            @pass_context
-            def new_func(ctx, *args, **kwargs):
-                obj = ctx.find_object(object_type)
-                return ctx.invoke(f, obj, *args, **kwargs)
-            return update_wrapper(new_func, f)
-        return decorator
+    def decorator(f: t.Callable[te.Concatenate[T, P], R]) -> t.Callable[P, R]:
+        @pass_context
+        def new_func(ctx: Context, *args: P.args, **kwargs: P.kwargs) -> R:
+            obj = ctx.find_object(object_type)
+            return ctx.invoke(f, obj, *args, **kwargs)
+        return update_wrapper(new_func, f)
 
     :param object_type: the type of the object to pass.
     :param ensure: if set to `True`, a new object will be created and
