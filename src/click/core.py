@@ -2784,25 +2784,35 @@ class Option(Parameter):
 
         if __debug__:
             if deprecated and prompt:
-                raise ValueError("`deprecated` options cannot use `prompt`.")
+                raise ValueError(
+                    "Deprecated options cannot use prompts. Remove either the 'deprecated' or 'prompt' parameter."
+                )
 
             if self.nargs == -1:
-                raise TypeError("nargs=-1 is not supported for options.")
+                raise TypeError(
+                    "Options cannot use nargs=-1 (unlimited arguments). Use 'multiple=True' instead for accepting multiple values."
+                )
 
             if not self.is_bool_flag and self.secondary_opts:
-                raise TypeError("Secondary flag is not valid for non-boolean flag.")
+                raise TypeError(
+                    "Secondary flags (like --no-flag) are only valid for boolean flags. Remove 'secondary_opts' or set 'is_flag=True'."
+                )
 
             if self.is_bool_flag and self.hide_input and self.prompt is not None:
                 raise TypeError(
-                    "'prompt' with 'hide_input' is not valid for boolean flag."
+                    "Boolean flags cannot use both 'prompt' and 'hide_input'. Boolean flags don't need hidden input."
                 )
 
             if self.count:
                 if self.multiple:
-                    raise TypeError("'count' is not valid with 'multiple'.")
+                    raise TypeError(
+                        "Options cannot use both 'count' and 'multiple'. Choose one: 'count' for incrementing integers, or 'multiple' for collecting multiple values."
+                    )
 
                 if self.is_flag:
-                    raise TypeError("'count' is not valid with 'is_flag'.")
+                    raise TypeError(
+                        "Options cannot use both 'count' and 'is_flag'. Choose one: 'count' for incrementing integers, or 'is_flag' for boolean flags."
+                    )
 
     def to_info_dict(self) -> dict[str, t.Any]:
         """
