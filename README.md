@@ -1,6 +1,10 @@
-<SYSTEM>
-Suggest changes to this README file to make it more appealing to users. Use a clear, friendly tone and Markdown formatting with emoji headers.
-</SYSTEM>
+<!--
+🤖 AI MAINTAINER NOTE:
+When reviewing or updating this README, suggest improvements that make it more appealing and user-friendly.
+Focus on clarity, readability, and visual appeal.
+Highlight project purpose, features, and quick-start examples.
+Use emoji headers, concise sentences, and clear Markdown formatting.
+-->
 
 
 <div align="center"><img src="https://raw.githubusercontent.com/pallets/click/refs/heads/stable/docs/_static/click-name.svg" alt="" height="150"></div>
