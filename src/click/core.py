@@ -7,6 +7,7 @@ import inspect
 import os
 import sys
 import typing as t
+import logging
 from collections import abc
 from collections import Counter
 from contextlib import AbstractContextManager
@@ -50,6 +51,8 @@ if t.TYPE_CHECKING:
 F = t.TypeVar("F", bound="t.Callable[..., t.Any]")
 V = t.TypeVar("V")
 
+logger = logging.getLogger(__name__)
+
 
 def _complete_visible_commands(
     ctx: Context, incomplete: str
@@ -71,22 +74,43 @@ def _complete_visible_commands(
 
 
 def _check_nested_chain(
-    base_command: Group, cmd_name: str, cmd: Command, register: bool = False
+    base_command: "Group", cmd_name: str, cmd: "Command", register: bool = False
 ) -> None:
-    if not base_command.chain or not isinstance(cmd, Group):
+    """
+    Validate that a command is not nested inside a group that uses chain mode.
+
+    Args:
+        base_command (Group): The parent command group.
+        cmd_name (str): The name of the command being added or checked.
+        cmd (Command): The command object to validate.
+        register (bool): If True, indicates this check is occurring during registration.
+
+    Raises:
+        RuntimeError: If attempting to add or use a group command within
+                      a chained group, which is not supported.
+    """
+    # Early exit if no chaining or the command is not a group
+    if not getattr(base_command, "chain", False) or not isinstance(cmd, Group):
+        logger.debug(
+            "Skipping chain validation for command '%s' under group '%s'.",
+            cmd_name,
+            getattr(base_command, "name", "<unnamed>")
+        )
         return
 
+    # Compose the appropriate message based on context
     if register:
         message = (
-            f"It is not possible to add the group {cmd_name!r} to another"
-            f" group {base_command.name!r} that is in chain mode."
+            f"Cannot register group '{cmd_name}' under '{base_command.name}', "
+            f"because '{base_command.name}' is in chain mode."
         )
     else:
         message = (
-            f"Found the group {cmd_name!r} as subcommand to another group "
-            f" {base_command.name!r} that is in chain mode. This is not supported."
+            f"Invalid nested group: '{cmd_name}' is a subcommand of chained "
+            f"group '{base_command.name}', which is not supported."
         )
 
+    logger.error("Nested chain violation: %s", message)
     raise RuntimeError(message)
 
 
