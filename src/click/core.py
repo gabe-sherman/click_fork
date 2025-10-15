@@ -78,13 +78,18 @@ def _check_nested_chain(
 
     if register:
         message = (
-            f"It is not possible to add the group {cmd_name!r} to another"
-            f" group {base_command.name!r} that is in chain mode."
+            f"Cannot register group {cmd_name!r} under {base_command.name!r} "
+            f"because {base_command.name!r} is configured to use chain mode. "
+            f"In chain mode, each subcommand must be an executable command, "
+            f"not another group. Consider converting {cmd_name!r} into a command "
+            f"or disabling chain mode for {base_command.name!r}."
         )
     else:
         message = (
-            f"Found the group {cmd_name!r} as subcommand to another group "
-            f" {base_command.name!r} that is in chain mode. This is not supported."
+            f"Invalid command hierarchy: group {cmd_name!r} is defined as a "
+            f"subcommand of {base_command.name!r}, which is operating in chain mode. "
+            f"Chained groups cannot contain other groups—only standalone commands. "
+            f"Update your command structure or disable chain mode in {base_command.name!r}."
         )
 
     raise RuntimeError(message)
