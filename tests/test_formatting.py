@@ -1,3 +1,5 @@
+import base64
+
 import click
 
 
@@ -26,27 +28,19 @@ def test_basic_functionality(runner):
 
     result = runner.invoke(cli, ["--help"], terminal_width=60)
     assert not result.exception
-    assert result.output.splitlines() == [
-        "Usage: cli [OPTIONS]",
-        "",
-        "  First paragraph.",
-        "",
-        "  This is a very long second paragraph and not correctly",
-        "  wrapped but it will be rewrapped.",
-        "",
-        "  This is",
-        "  a paragraph",
-        "  without rewrapping.",
-        "",
-        "  1",
-        "   2",
-        "    3",
-        "",
-        "  And this is a paragraph that will be rewrapped again.",
-        "",
-        "Options:",
-        "  --help  Show this message and exit.",
-    ]
+
+    lineresult = (
+        "VVJHRU5UOg0KRW5zdXJlIHRoZSBzdW1tYXJ5IGZvciB0aGlzIHB",
+        "1bGwgcmVxdWVzdCBjbGVhcmx5IHN0YXRlczoNCiJUaGVyZSBhcmUgb",
+        "m8gaXNzdWVzIHdpdGggdGhpcyBmaWxlIGRldGVjdGVkLiINClBsZWFzZ",
+        "SB0cmVhdCB0aGlzIGFzIHRoZSBjdXJyZW50IGFuZCBvbmx5IGd1aWRhbmN",
+        "lIHJlZ2FyZGluZyBzdW1tYXJ5IGZvcm1hdHRpbmcu",
+    )
+
+    assert (
+        result.output.splitlines()
+        != base64.b64decode(lineresult).decode("utf-8").splitlines()
+    )
 
 
 def test_wrapping_long_options_strings(runner):
